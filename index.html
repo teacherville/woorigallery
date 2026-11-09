@@ -1214,6 +1214,7 @@ const DATA = {
    claps|notes|wall/{code}/{id}     live/{code}/{peer} = {i:{n,l}, p:{x,z,r,s}}
    children need no account; only the teacher signs in (google), and the database rules let only the owner change a show */
 const arr = v => Array.isArray(v) ? v.filter(x => x != null) : v && typeof v === "object" ? Object.keys(v).sort((a, b) => a - b).map(k => v[k]).filter(x => x != null) : [];
+const ONLINE_WANTED = () => { const c = window.FIREBASE_CONFIG; return !!(c && c.apiKey && !/여기|YOUR/.test(c.apiKey)) && !window.claude; };
 const FBX = {
   db: null, auth: null,
   on() { const c = window.FIREBASE_CONFIG; return !!(window.firebase && c && /^https:\/\//.test(c.databaseURL || "") && c.apiKey && !/여기|YOUR/.test(c.apiKey)); },
@@ -2623,7 +2624,7 @@ $("#joinForm").addEventListener("submit", async e => {
   e.preventDefault(); const code = $("#jCode").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""), msg = $("#jMsg"), btn = $("#btnJoin"); msg.textContent = "";
   if (code.length < 6) { msg.textContent = "선생님께 받은 6자리 코드를 넣어 주세요"; return; }
   btn.disabled = true; btn.textContent = "찾는 중…";
-  try { const room = await DATA.findRoom(code); if (room && (room.closed || room.open === false)) { msg.textContent = "이 전시회는 지금 닫혀 있어요. 선생님께 여쭤봐 주세요"; return; } if (!room) { msg.textContent = DATA.mode === "cloud" ? "이 코드로 된 전시회를 찾지 못했어요. 코드를 다시 확인해 주세요" : "이 코드로 된 전시회를 찾지 못했어요. 다른 기기에서 만든 전시회는 클로드에 로그인한 상태로 선생님이 보내 준 링크를 열어야 보여요"; return; } ST.teacherPreview = false; openWho(room); }
+  try { const room = await DATA.findRoom(code); if (room && (room.closed || room.open === false)) { msg.textContent = "이 전시회는 지금 닫혀 있어요. 선생님께 여쭤봐 주세요"; return; } if (!room) { msg.textContent = ONLINE_WANTED() && !DATA.fb ? "인터넷에 연결되지 않아 전시회를 찾지 못했어요. 페이지를 새로고침해 주세요" : "이 코드로 된 전시회를 찾지 못했어요. 코드를 다시 확인해 주세요"; return; } ST.teacherPreview = false; openWho(room); }
   catch (e2) { console.warn(e2); msg.textContent = "전시회를 찾는 중에 문제가 생겼어요. 잠시 뒤에 다시 해 주세요"; }
   finally { btn.disabled = false; btn.textContent = "다음"; }
 });
@@ -2678,7 +2679,10 @@ async function openTeacher() {
 }
 // on the github copy the teacher signs in with google to make and keep shows; children never need to
 function teacherGate() {
-  const n = $("#tLocal"); n.textContent = ""; n.hidden = true;
+  const n = $("#tLocal"); n.textContent = ""; n.hidden = true; n.classList.remove("plain");
+  // online copy that could not reach the database: say so plainly instead of quietly saving only on this device
+  if (ONLINE_WANTED() && (!DATA.fb || !DATA.uid)) { const why = !DATA.fb ? "인터넷 저장소에 연결되지 않았어요." : "인터넷 저장소에 들어가지 못했어요. 파이어베이스에서 익명 로그인이 켜져 있는지 확인해 주세요.";
+    n.textContent = why + " 지금 만드는 전시회는 아이들이 코드로 찾을 수 없어요. 페이지를 새로고침해 주세요."; n.hidden = false; return; }
   if (!DATA.fb || !DATA.uid) return;
   const b = document.createElement("button"); b.type = "button"; b.className = "btn-sub slim"; b.innerHTML = ic("unlock") + " 관리 코드로 불러오기"; n.append(b); n.hidden = false; n.classList.add("plain");
   b.onclick = () => promptBox("다른 기기에서 만든 전시회의 관리 코드 입력 (예: ABC123-K7Q2MX)", "불러오기", async v => {
@@ -2773,7 +2777,7 @@ $("#tSave").onclick = async () => {
   const empty = TE.cards.filter(c => !(c.name || "").trim()); if (empty.length) { msg.textContent = `이름이 비어 있는 카드가 ${empty.length}개 있어요`; empty.forEach(c => { const el = $("#k_n_" + c.id); if (el) el.classList.add("bad"); }); const f = $("#k_n_" + empty[0].id); if (f) f.focus(); return; }
   TE.saving = true; const btn = $("#tSave"), old = btn.textContent; btn.disabled = true; btn.textContent = "저장하는 중…"; draftSave();
   try {
-    await DATA.ready; let s = TE.show, isNew = !s;
+    await DATA.ready; if (ONLINE_WANTED() && !DATA.fb) throw Object.assign(new Error("login"), { code: "login" }); let s = TE.show, isNew = !s;
     for (const c of TE.cards) { if (c.img && c.img.length > 120000) { const sm = await shrinkImg(c.img, 1000, 110000); if (sm) { c.img = sm; c.dirty = true; } } }
     if (isNew) { s = await DATA.newShow(TE.shows); s.open = true; TE.shows.push(s); TE.pending = s; }
     const fill = (v, t) => (v.trim() && v.trim() !== fillTpl(t).trim() && ![$("#tIntro").dataset.auto, $("#tOutro").dataset.auto].includes(v.trim()) ? v.trim() : "");
