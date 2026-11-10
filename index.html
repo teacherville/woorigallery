@@ -576,24 +576,24 @@ h3,.code,.stamps b,.wgrid b{font-family:var(--font);font-weight:400;letter-spaci
 .touch #camBtns::before{left:auto;right:0;transform:none}
 @media (min-width:900px){.touch #emoBar::before,.touch #camBtns::before{left:50%;right:auto;transform:translateX(-50%)}}
 /* trays side by side near the middle (desktop + tablets); the action button sits just above them */
-body:not(.touch) #emoBar{left:auto;right:calc(50% + 12px)}
-body:not(.touch) #camBtns{right:auto;left:calc(50% + 12px)}
-body:not(.touch) #act{bottom:calc(122px + env(safe-area-inset-bottom,0px))}
+html:not(.touch) #emoBar{left:auto;right:calc(50% + 12px)}
+html:not(.touch) #camBtns{right:auto;left:calc(50% + 12px)}
+html:not(.touch) #act{bottom:calc(122px + env(safe-area-inset-bottom,0px))}
 @media (min-width:900px){.touch #emoBar{left:auto;right:calc(50% + 12px)}.touch #camBtns{right:auto;left:calc(50% + 12px)}.touch #act{left:max(16px,env(safe-area-inset-left,0px));justify-content:center;bottom:calc(290px + env(safe-area-inset-bottom,0px))}}
-@media (max-width:520px){body:not(.touch) #emoBar,body:not(.touch) #camBtns{flex-direction:column}}
-body:not(.touch) #act{bottom:calc(140px + env(safe-area-inset-bottom,0px))}
+@media (max-width:520px){html:not(.touch) #emoBar,html:not(.touch) #camBtns{flex-direction:column}}
+html:not(.touch) #act{bottom:calc(140px + env(safe-area-inset-bottom,0px))}
 @media (min-width:900px){.touch #emoBar,.touch #camBtns{bottom:calc(40px + env(safe-area-inset-bottom,0px))}.touch #act{bottom:calc(156px + env(safe-area-inset-bottom,0px))}}
 /* one balanced control bar in the middle: both halves the same width, joined, with a thin divider */
-body:not(.touch) #emoBar,body:not(.touch) #camBtns{width:236px;justify-content:center;bottom:calc(22px + env(safe-area-inset-bottom,0px))}
-body:not(.touch) #emoBar{right:50%;border-radius:999px 0 0 999px;padding-right:12px}
-body:not(.touch) #camBtns{left:50%;border-radius:0 999px 999px 0;padding-left:12px;box-shadow:inset 1.5px 0 0 rgba(255,255,255,.28),0 10px 26px rgba(20,10,5,.25)}
-body:not(.touch) #act{bottom:calc(128px + env(safe-area-inset-bottom,0px))}
+html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:236px;justify-content:center;bottom:calc(22px + env(safe-area-inset-bottom,0px))}
+html:not(.touch) #emoBar{right:50%;border-radius:999px 0 0 999px;padding-right:12px}
+html:not(.touch) #camBtns{left:50%;border-radius:0 999px 999px 0;padding-left:12px;box-shadow:inset 1.5px 0 0 rgba(255,255,255,.28),0 10px 26px rgba(20,10,5,.25)}
+html:not(.touch) #act{bottom:calc(128px + env(safe-area-inset-bottom,0px))}
 @media (min-width:900px){.touch #emoBar,.touch #camBtns{width:236px;justify-content:center}
   .touch #emoBar{right:50%;border-radius:999px 0 0 999px;padding-right:12px}
   .touch #camBtns{left:50%;border-radius:0 999px 999px 0;padding-left:12px;box-shadow:inset 1.5px 0 0 rgba(255,255,255,.28),0 10px 26px rgba(20,10,5,.25)}
   .touch #act{bottom:calc(146px + env(safe-area-inset-bottom,0px))}}
-@media (max-width:520px){body:not(.touch) #emoBar,body:not(.touch) #camBtns{width:auto}}
-body:not(.touch) #emoBar,body:not(.touch) #camBtns{width:252px}
+@media (max-width:520px){html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:auto}}
+html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:252px}
 @media (min-width:900px){.touch #emoBar,.touch #camBtns{width:252px}}
 #camBtns button,#emoBar button{flex-shrink:0}#camBtns #camFp{white-space:nowrap}
 #camBtns #camFp{min-width:76px}
@@ -610,7 +610,7 @@ body:not(.touch) #emoBar,body:not(.touch) #camBtns{width:252px}
   #artCap{top:calc(48px + env(safe-area-inset-top,0px));padding:6px 14px!important;font-size:13px!important;gap:6px!important}
   #artCap b,#artCap strong{font-size:16px!important}
   .touch #joy{width:104px;height:104px;left:calc(14px + env(safe-area-inset-left,0px));bottom:calc(12px + env(safe-area-inset-bottom,0px))}
-  .touch #emoBar,.touch #camBtns,body:not(.touch) #emoBar,body:not(.touch) #camBtns{flex-direction:row;width:auto;padding:5px;gap:5px;border-radius:999px;bottom:calc(12px + env(safe-area-inset-bottom,0px));box-shadow:0 6px 16px rgba(20,10,5,.22)}
+  .touch #emoBar,.touch #camBtns,html:not(.touch) #emoBar,html:not(.touch) #camBtns{flex-direction:row;width:auto;padding:5px;gap:5px;border-radius:999px;bottom:calc(12px + env(safe-area-inset-bottom,0px));box-shadow:0 6px 16px rgba(20,10,5,.22)}
   .touch #emoBar{left:calc(128px + env(safe-area-inset-left,0px));right:auto}
   .touch #camBtns{right:max(12px,env(safe-area-inset-right,0px));left:auto}
   #emoBar::before,#camBtns::before{display:none}
@@ -632,6 +632,17 @@ body:not(.touch) #emoBar,body:not(.touch) #camBtns{width:252px}
 
 /* tray captions removed */
 #emoBar::before,#camBtns::before{display:none!important;content:none!important}
+
+/* dialogs never cut off: scroll when taller than the screen (landscape phones) */
+.sheet,#guide{overflow-y:auto;-webkit-overflow-scrolling:touch;place-items:start center}
+.sheet>*,#guide>.gcard{margin:auto 0}
+@media (max-height:500px) and (orientation:landscape){
+  #guide .gcard{width:min(640px,100%);display:grid;grid-template-columns:118px 1fr;column-gap:22px;row-gap:8px;text-align:left;padding:18px 22px 16px;align-items:center}
+  #guide .gart{grid-row:1/span 4;width:118px;height:118px}
+  #guide .gart .gfp{font-size:18px;padding:10px 16px}
+  #guide h3{font-size:21px;margin:0}#guide p{font-size:15px}#guide .gdots{margin:0}
+  .tkwrap{zoom:.7}
+}
 
 </style>
 </head>
