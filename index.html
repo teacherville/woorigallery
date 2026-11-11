@@ -19,9 +19,86 @@ window.FIREBASE_CONFIG = {
   appId: "1:1735490841:web:a1aebdb0514f966d32d988"
 };
 </script>
+<script>
+/* 우리 반 전용 서버: 선생님이 guide.html에서 연결한 자기 파이어베이스를 쓰게 해요.
+   - 선생님: guide.html 5단계가 만들어 주는 "선생님 전용 링크"(?db=…&tk=…)로 열 때만 (브라우저에 저장하지 않아요)
+   - 아이들 기기: 선생님이 준 링크·QR의 ?db= 값 (저장하지 않아요). 6자리 코드만 넣으면 공용 DB의 ptr/{code}를 보고 찾아가요 */
+(function () {
+  const SHARED = window.FIREBASE_CONFIG || {};
+  window.WG_SHARED_PID = SHARED.projectId || ""; window.WG_SHARED_URL = (SHARED.databaseURL || "").replace(/\/+$/, "");
+  const enc = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const dec = t => JSON.parse(decodeURIComponent(escape(atob(t.replace(/-/g, "+").replace(/_/g, "/")))));
+  const ok = c => !!c && /^AIza[\w-]{30,}$/.test(c.a || "") && /^[\w.-]+\.(firebaseio\.com|firebasedatabase\.app)$/.test(c.d || "") && /^[a-z0-9-]{4,40}$/.test(c.p || "");
+  let own = null, from = "";
+  const m = location.search.match(/[?&]db=([A-Za-z0-9_-]+)/);
+  const tkm = location.search.match(/[?&]tk=([A-Z0-9]{20,40})(?:&|$)/);
+  if (m) { try { own = dec(m[1]); from = "link"; } catch (_) { own = null; } }
+  // 선생님 전용 링크(?db=…&tk=…): 어느 브라우저·시크릿 창에서 열어도 선생님 모드로 열려요 (저장하지 않아요)
+  if (m && tkm && ok(own)) { from = "saved"; window.WG_TK = tkm[1]; window.WG_TKLINK = true; }
+  if (!ok(own)) own = null;
+  try { localStorage.removeItem("wg_own_db"); localStorage.removeItem("wg_own_off"); } catch (_) {} // 예전 방식(브라우저에 연결 저장)은 쓰지 않아요
+  if (ok(own) && own.p !== window.WG_SHARED_PID) {
+    window.FIREBASE_CONFIG = { apiKey: own.a, authDomain: own.p + ".firebaseapp.com", databaseURL: "https://" + own.d, projectId: own.p };
+    window.WG_OWN = from; window.WG_DB = enc({ a: own.a, d: own.d, p: own.p });
+    if (window.WG_TK) window.WG_TEACHER_URL = location.origin + location.pathname + "?db=" + window.WG_DB + "&tk=" + window.WG_TK;
+  }
+  window.WG_ENC = enc; window.WG_OK = ok;
+
+})();
+</script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+#netNote{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translate(-50%,-24px);width:min(440px,calc(100% - 32px));background:var(--paper);color:var(--ink);border:1.5px solid var(--line);border-radius:20px;box-shadow:0 14px 40px rgba(47,42,61,.22);padding:18px 20px 16px;z-index:80;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;font-family:var(--font);user-select:text;-webkit-user-select:text;word-break:keep-all;overflow-wrap:anywhere}
+#netNote.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#netNote b{display:block;font-size:17px;margin:0 28px 6px 0;line-height:1.4}
+#netNote p{margin:0 0 14px;font-size:14.5px;line-height:1.55;color:var(--sub)}
+#netNote .row{display:flex;gap:8px;flex-wrap:wrap;flex-direction:row-reverse}
+#netNote .row a,#netNote .row button{flex:1 1 140px;min-height:44px;border-radius:12px;font:inherit;font-size:14.5px;font-weight:700;display:grid;place-items:center;text-decoration:none;cursor:pointer;padding:0 12px}
+#netNote .go{background:var(--ink);color:#fff;border:0}
+#netNote .re{background:var(--chip);color:var(--ink);border:0}
+#netNote .x{position:absolute;top:10px;right:10px;width:36px;height:36px;border:0;background:none;font-size:22px;color:var(--sub);cursor:pointer;border-radius:50%}
+@media (max-width:480px){#netNote .row{flex-direction:column-reverse}#netNote .row a,#netNote .row button{flex:none;width:100%}}
+</style>
+<div id="netNote" role="alert" aria-live="assertive"><button class="x" type="button" aria-label="닫기">×</button><b id="nnT"></b><p id="nnP"></p><div class="row" id="nnRow"></div></div>
+<script>
+const NETWATCH = (() => {
+  const GUIDE = new URL("guide.html", location.href.split(/[?#]/)[0]).href;
+  const el = document.getElementById("netNote"), T = document.getElementById("nnT"), P = document.getElementById("nnP"), row = document.getElementById("nnRow");
+  let started = false, up = false, timer = 0, closed = false;
+  const shared = () => { const c = window.FIREBASE_CONFIG || {}; return !window.WG_OWN && c.projectId === "woorigallery-4a06a"; };
+  function show(title, body, buttons) {
+    if (closed) return;
+    T.textContent = title; P.textContent = body; row.innerHTML = "";
+    buttons.forEach(([label, cls, act]) => { const b = document.createElement(typeof act === "string" ? "a" : "button"); b.className = cls; b.textContent = label; if (typeof act === "string") { b.href = act; } else { b.type = "button"; b.onclick = act; } row.append(b); });
+    el.classList.add("on");
+  }
+  function hide() { el.classList.remove("on"); }
+  el.querySelector(".x").onclick = () => { closed = true; hide(); };
+  function slow() {
+    if (up || !navigator.onLine) return;
+    const btns = [["새로고침", "re", () => location.reload()]];
+    if (shared()) btns.push(["우리 반 전용으로 만들기", "go", GUIDE]);
+    if (window.WG_OWN === "saved") btns.push(["연결 다시 확인하기", "go", GUIDE + "#connect"]);
+    show(window.WG_OWN ? "선생님 전용 서버에 연결되지 않아요" : "접속이 몰려 연결이 늦어지고 있어요",
+      shared() ? "잠시 뒤 새로고침해 주세요. 계속 막히면 우리 반 전용 전시회를 직접 만들어 쓸 수 있어요."
+      : window.WG_OWN ? "잠시 뒤 새로고침해 주세요. 계속 안 되면 선생님 파이어베이스 설정을 다시 확인해 주세요." : "잠시 뒤 새로고침해 주세요. 인터넷 연결도 함께 확인해 주세요.", btns);
+  }
+  function start(db) {
+    if (started) return; started = true;
+    db.ref(".info/connected").on("value", s => { up = !!s.val(); if (up) { clearTimeout(timer); hide(); } else { clearTimeout(timer); timer = setTimeout(slow, 9000); } });
+  }
+  // a copy whose settings were not filled in yet (or are missing the database address)
+  addEventListener("DOMContentLoaded", () => {
+    const c = window.FIREBASE_CONFIG || {};
+    if (!c.apiKey || /여기|YOUR/.test(c.apiKey)) show("파이어베이스 설정이 아직 비어 있어요", "지금은 이 기기에서만 저장되고, 아이들은 코드로 들어올 수 없어요. 안내의 '설정값 붙여 넣기' 단계를 확인해 주세요.", [["설치 안내 보기", "go", GUIDE]]);
+    else if (!/^https:\/\//.test(c.databaseURL || "")) show("설정값에 databaseURL이 빠져 있어요", "파이어베이스에서 Realtime Database를 만든 뒤 설정값을 다시 복사해 붙여 넣어 주세요.", [["설치 안내 보기", "go", GUIDE]]);
+  });
+  return { start };
+})();
+</script>
+
 <title>우리반 전시회</title>
 <meta name="description" content="우리 반 그림이 걸린 3D 미술관. 코드 하나로 친구들과 함께 둘러봐요.">
 <meta name="theme-color" content="#f1e9dd">
@@ -166,6 +243,34 @@ input.f::placeholder,textarea.f::placeholder{color:#a9a0ae}
 #zoneTag.on{opacity:1}
 #zoneTag small{display:block;font-size:15px;letter-spacing:.2em;color:var(--accent)}
 #zoneTag b{display:block;font-weight:400;font-size:clamp(30px,5vw,46px);text-shadow:0 2px 0 #fff,0 6px 20px rgba(255,255,255,.8)}
+/* notice: "꼭 읽어 주세요" */
+.readme{display:inline-flex;align-items:center;gap:8px;margin:14px auto 0;padding:7px 14px 7px 7px;border-radius:999px;background:rgba(47,42,61,.55);color:#fff;font:inherit;font-size:14px;border:1px solid rgba(255,255,255,.35);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);cursor:pointer;animation:hFade .8s ease 2.1s both}
+.readme .rm-tag{background:#f4d29a;color:#2f2a3d;border-radius:999px;padding:3px 10px;font-weight:700;font-size:12.5px}
+.ownchip{margin:10px auto 0;font-size:13px;color:#fff;background:rgba(47,42,61,.55);border-radius:999px;padding:6px 14px;width:max-content;max-width:100%}
+.ownchip[hidden]{display:none}
+.ownchip button{color:#f4d29a;text-decoration:underline;font:inherit;background:none;border:0;padding:0;cursor:pointer}
+.card.notice .body{font-size:15px;line-height:1.6}
+.card.notice .nt-must{display:inline-block;margin:0 0 4px;background:#c8553d;color:#fff;font-weight:700;font-size:13px;border-radius:999px;padding:3px 12px}
+.card.notice h4{margin:18px 0 6px;font-size:16px}
+.card.notice ul{margin:0;padding-left:20px}
+.card.notice li{margin:4px 0;word-break:keep-all;overflow-wrap:anywhere}
+.card.notice li[hidden],.card.notice div[hidden],.card.notice button[hidden]{display:none}
+.card.notice .nt-link{display:inline-flex;margin-top:10px;text-decoration:none}
+/* "접속이 막힐 때" — 눈에 잘 띄는 안내 상자와 큰 버튼 */
+.card.notice #ntBusy{background:#e8f3f1;border:1.5px solid #bfdcd7;border-radius:18px;padding:14px 16px 16px;margin-top:6px}
+.card.notice #ntBusy h4{margin-top:0;color:#1f5f59}
+.card.notice #ntBusy .nt-link{display:flex;width:100%;justify-content:center;align-items:center;gap:8px;min-height:54px;margin-top:12px;border:0;border-radius:16px;background:linear-gradient(135deg,#3f9a90,#2a6d67);color:#fff;font-size:17px;font-weight:700;box-shadow:0 8px 20px rgba(42,109,103,.28);transition:transform .15s,box-shadow .15s}
+.card.notice #ntBusy .nt-link:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(42,109,103,.36)}
+.card.notice footer{justify-content:space-between}
+.card.notice .nt-ask{color:var(--sub);font-size:14px}
+.card.notice .ig{display:inline-flex;align-items:center;gap:8px;text-decoration:none}
+/* before uploading photos */
+.pnote{max-width:560px;margin:4px auto 18px;text-align:left;background:#fff6e5;border:1.5px solid #f0d9a8;border-radius:18px;padding:14px 18px;font-size:14.5px;line-height:1.55;word-break:keep-all;overflow-wrap:anywhere}
+.pnote b{display:block;font-size:15.5px;margin-bottom:6px}
+.pnote ul{margin:0;padding-left:20px}
+.pnote li{margin:3px 0}
+.pnote li[hidden]{display:none}
+.pnote em{font-style:normal;font-weight:700}
 /* sheets */
 .sheet{position:fixed;inset:0;display:grid;place-items:center;background:rgba(47,42,61,.45);z-index:30;padding:calc(16px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 .card{background:var(--paper);border-radius:26px;box-shadow:0 30px 60px rgba(40,20,10,.3);width:min(520px,100%);max-height:100%;display:flex;flex-direction:column;overflow:hidden}
@@ -282,6 +387,10 @@ input.f::placeholder,textarea.f::placeholder{color:#a9a0ae}
 #tForm .st{display:none}
 #teach[data-view="list"] #tForm,#teach[data-view="list"] .t-bar{display:none}
 #teach[data-view="wiz"] .t-head,#teach[data-view="wiz"] #tMine,#teach[data-view="wiz"] #tLocal{display:none}
+.tkbox{background:#e8f3f1;border:1.5px solid #bfdcd7;border-radius:18px;padding:14px 16px;margin:0 0 16px;font-size:15px;color:#2f2a3d}
+.tkbox[hidden],#teach[data-view="wiz"] .tkbox,#teach[data-view="load"] .tkbox{display:none}
+.tkbox b{color:#1f5f59}.tkbox p{margin:6px 0 10px;line-height:1.55}.tkbox .ic{width:16px;height:16px;vertical-align:-2px}
+.tkbox .btn-main{background:linear-gradient(135deg,#3f9a90,#2a6d67);border:0}.tkbox .tklink{display:block;width:100%;margin-top:10px;font:12px ui-monospace,monospace;padding:8px;border:1px solid #bfdcd7;border-radius:10px}.tkbox .tklink[hidden]{display:none}
 #teach[data-view="list"] #tNewWrap{display:block}
 #tReset{display:none!important}
 #tNewWrap{display:none;margin:0 0 18px}
@@ -709,6 +818,8 @@ html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:252px}
       <button class="hb teach" id="goTeach" type="button"><small>선생님</small><b>전시회 만들기</b></button>
     </div>
     <button class="linkbtn" id="goSample" type="button">예시 전시관 둘러보기 →</button>
+    <button class="readme" id="goGuide" type="button"><span class="rm-tag">꼭 읽어 주세요</span>이용 안내</button>
+
   </div>
 </div>
 
@@ -726,7 +837,7 @@ html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:252px}
   <form class="box" id="whoForm" autocomplete="off">
     <h2 id="whoT">반가워요!</h2>
     <p id="whoS" hidden></p>
-    <input class="f name-in" id="wName" maxlength="8" placeholder="이름 또는 번호" aria-label="이름 또는 번호">
+    <input class="f name-in" id="wName" maxlength="8" placeholder="번호 또는 별명" aria-label="번호 또는 별명">
     <h4>옷 색</h4>
     <div class="colors" id="wColors" role="radiogroup" aria-label="옷 색"></div>
     <h4>모자</h4>
@@ -764,7 +875,7 @@ html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:252px}
 
 <div id="leafSheet" class="sheet" hidden>
   <div class="card wide" role="dialog" aria-label="작품 목록"><header><h3 id="lfTitle">작품 목록</h3><button class="x" data-close type="button" aria-label="닫기">×</button></header>
-    <div class="body"><p class="sub">친구 이름을 누르면 그 작품 앞으로 바로 가요.</p><div class="wgrid" id="lfWorks"></div></div>
+    <div class="body"><p class="sub">번호나 별명을 누르면 그 작품 앞으로 바로 가요.</p><div class="wgrid" id="lfWorks"></div></div>
     <footer><button class="btn-sub" type="button" id="lfStart">전시실 입구로</button><button class="btn-main" type="button" id="lfFinal"><svg class="ic" aria-hidden="true"><use href="#i-camera"/></svg> 마무리 방으로</button></footer></div>
 </div>
 
@@ -788,6 +899,44 @@ html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:252px}
   </div>
 </div>
 
+<div id="noticeSheet" class="sheet" hidden>
+  <div class="card notice" role="dialog" aria-labelledby="ntT"><header><h3 id="ntT">이용 안내</h3><button class="x" data-close type="button" aria-label="닫기">×</button></header>
+    <div class="body">
+      <p class="nt-must">꼭 읽어 주세요</p>
+      <h4>개인정보</h4>
+      <ul>
+        <li>이름, 연락처 같은 개인정보는 받지 않아요. 작품과 입장할 때는 <b>번호나 별명</b>을 적어 주세요.</li>
+        <li>아이 실명이나 얼굴이 보이는 사진은 올리지 말아 주세요.</li>
+        <li>저장되는 내용: 반 이름, 전시 주제, 작품 사진, 번호·별명, 쪽지·방명록</li>
+        <li id="ntWhere">저장 위치: Google Firebase (싱가포르)</li>
+        <li>다 쓴 전시회는 내 전시회 목록의 <b>⋯ → 지우기</b>를 누르면 작품과 글이 모두 지워져요. <b>전시 닫기</b>는 입장만 막아요.</li>
+        <li id="ntDel">개인정보가 담겼거나 부적절한 작품·글은 운영자가 지울 수 있어요.</li>
+      </ul>
+      <div id="ntBusy">
+        <h4>접속이 막힐 때</h4>
+        <ul>
+          <li>무료 서버로 운영돼 동시에 들어올 수 있는 인원에 제한이 있어요. 여러 반이 한꺼번에 쓰면 입장이 늦어지거나 막힐 수 있어요.</li>
+          <li>이럴 때는 선생님 구글 계정으로 <b>우리 반 전용 서버</b>를 만들어 쓸 수 있어요. 무료예요.</li>
+        </ul>
+        <a class="btn-sub nt-link" href="guide.html">우리 반 전용으로 만들기 →</a>
+      </div>
+      <div id="ntOwn" hidden>
+        <h4>선생님 전용 서버</h4>
+        <ul>
+          <li>이 전시회는 선생님 개인 파이어베이스에 저장돼요. 티처빌은 저장된 내용을 보거나 관리하지 않아요.</li>
+        </ul>
+        
+      </div>
+      <h4>서비스와 저작권</h4>
+      <ul>
+        <li>무료로 제공되는 서비스라 예고 없이 바뀌거나 중단될 수 있어요. 작품 원본은 따로 보관해 주세요.</li>
+        <li>우리반 전시회의 저작권은 티처빌연수원에 있어요. 학교 수업 등 비상업적 목적으로는 자유롭게 쓰고 복제할 수 있지만, <b>판매·유료 서비스 등 상업적 이용은 할 수 없어요.</b></li>
+        <li>올린 작품의 권리는 작품을 만든 사람에게 있어요.</li>
+      </ul>
+    </div>
+    <footer><span class="nt-ask">문의</span><a class="btn-main ig" href="https://www.instagram.com/teacherville_official/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.3" fill="currentColor"/></svg>@teacherville_official</a></footer>
+  </div>
+</div>
 <div id="wallSheet" class="sheet" hidden>
   <div class="card wide" role="dialog" aria-label="메시지 월"><header><h3>우리들의 한마디</h3><button class="x" data-close type="button" aria-label="닫기">×</button></header>
     <div class="body"><div class="wallgrid" id="wallList"></div></div>
@@ -817,6 +966,7 @@ html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:252px}
   <div class="t-wrap">
     <div class="t-head"><h2 id="tHead">우리반 전시회 만들기</h2><button class="btn-sub" type="button" id="tHome">처음으로</button></div>
     <p class="notice" id="tLocal" hidden></p>
+    <div class="tkbox" id="tkBox" hidden></div>
     <div id="tNewWrap"><button class="btn-main big" type="button" id="tNew"><span class="plus" aria-hidden="true">+</span><b>새 전시회 만들기</b><small>반 · 주제 · 사진만 넣으면 끝!</small></button></div>
     <div id="tMine" class="mine" hidden><h3>내 전시회</h3><div id="tShows" class="shows"></div></div>
     <footer class="t-foot"><img class="logo t-logo" src="data:image/png;base64,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" alt="티처빌" width="483" height="121"><small>© 2026 티처빌연수원</small></footer>
@@ -835,7 +985,7 @@ html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:252px}
           <label class="lab full">입구 소개 글<textarea class="f" id="tIntro" maxlength="300" rows="3"></textarea></label>
           <label class="lab full">마무리 글<textarea class="f" id="tOutro" maxlength="200" rows="3"></textarea></label>
         </div></details></div>
-      <div class="st st3"><div class="qEmoji"><svg class="ic" aria-hidden="true"><use href="#i-image"/></svg></div><h2 class="qTitle">어떤 작품을 전시할까요?</h2><div class="upload">
+      <div class="st st3"><div class="qEmoji"><svg class="ic" aria-hidden="true"><use href="#i-image"/></svg></div><h2 class="qTitle">어떤 작품을 전시할까요?</h2><div class="pnote" role="note"><b>사진 올리기 전에 꼭 확인해 주세요</b><ul><li>개인정보는 받지 않아요. 작품에는 <em>번호나 별명</em>을 적어 주세요.</li><li>아이 얼굴이나 이름표가 보이는 사진은 올리지 말아 주세요.</li><li class="pn-where">작품과 글은 Google Firebase(싱가포르)에 저장돼요.</li><li class="pn-del">개인정보가 담겼거나 부적절한 작품은 운영자가 지울 수 있어요.</li></ul></div><div class="upload">
         <label class="btn-main big" for="tBulk" tabindex="0" id="tBulkL">작품 사진 올리기</label><input type="file" id="tBulk" accept="image/*" multiple hidden>
       </div>
       <div id="tList" class="cards"></div></div>
@@ -1351,7 +1501,7 @@ const FBX = {
   db: null, auth: null,
   on() { const c = window.FIREBASE_CONFIG; return !!(window.firebase && c && /^https:\/\//.test(c.databaseURL || "") && c.apiKey && !/여기|YOUR/.test(c.apiKey)); },
   async init() {
-    if (!this.on()) return false; const fb = window.firebase; if (!fb.apps.length) fb.initializeApp(window.FIREBASE_CONFIG); this.db = fb.database(); this.auth = fb.auth();
+    if (!this.on()) return false; const fb = window.firebase; if (!fb.apps.length) fb.initializeApp(window.FIREBASE_CONFIG); this.db = fb.database(); this.auth = fb.auth(); { const db = this.db, r0 = db.ref.bind(db); db.ref = (...a) => { NETWATCH.start(db); return r0(...a); }; }
     const set = u => { DATA.uid = u ? u.uid : null; DATA.who = ""; };
     await new Promise(r => { let done = false; this.auth.onAuthStateChanged(u => { set(u); if (!done) { done = true; r(); } }); setTimeout(() => { if (!done) { done = true; r(); } }, 5000); });
     return true;
@@ -1368,10 +1518,19 @@ const FBX = {
   ref(p) { return this.db.ref(p); },
   async val(p) { return (await this.db.ref(p).once("value")).val(); },
 };
+/* ---- 6자리 코드만으로 선생님 전용 서버 전시회 찾기: 공용 DB의 ptr/{code}에 "이 코드는 이 서버" 표시만 남겨요 (REST 한 번, 실시간 연결 아님) ---- */
+const DBPTR = {
+  url(path) { const u = window.WG_SHARED_URL; return u ? u + "/" + path + ".json" : ""; },
+  async fetch(u, opt) { const ac = typeof AbortController === "function" ? new AbortController() : null, t = setTimeout(() => ac && ac.abort(), 6000); try { return await fetch(u, Object.assign({ cache: "no-store" }, opt || {}, ac ? { signal: ac.signal } : {})); } finally { clearTimeout(t); } },
+  async get(code) { const u = this.url("ptr/" + code); if (!u) return null; try { const r = await this.fetch(u); if (!r.ok) return null; const v = await r.json(); return v && window.WG_OK && window.WG_OK(v) ? v : null; } catch (_) { return null; } },
+  async sharedHas(code) { const u = this.url("codes/" + code + "/code"); if (!u) return false; try { const r = await this.fetch(u); return r.ok && (await r.json()) != null; } catch (_) { return false; } },
+  mine() { const c = window.FIREBASE_CONFIG || {}; return { a: c.apiKey, d: String(c.databaseURL || "").replace(/^https?:\/\//, "").replace(/\/.*$/, ""), p: c.projectId }; },
+  async put(code) { const u = this.url("ptr/" + code); if (!u || !window.WG_OWN) return false; try { const r = await fetch(u, { method: "PUT", body: JSON.stringify(Object.assign(this.mine(), { t: Date.now() })) }); return r.ok; } catch (_) { return false; } },
+};
 const FBM = {
   async loadShows() { await this.ready; if (!this.uid) return []; const v = await FBX.val("teachers/" + this.uid); return arr(v && v.shows).filter(x => x && (x.name || arr(x.order).length)).map(x => Object.assign(this.head(Object.assign({}, x, { order: arr(x.order) })), { owner: x.owner || "", key: x.key || "" })); },
   async loadWorks(show) { return (await FBX.val("works/" + show.code)) || {}; },
-  async newCode() { const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; for (let k = 0; k < 8; k++) { let c = ""; for (let i = 0; i < 6; i++) c += A[Math.floor(Math.random() * A.length)]; if (!(await FBX.val("codes/" + c))) return c; } throw new Error("code"); },
+  async newCode() { const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; for (let k = 0; k < 8; k++) { let c = ""; for (let i = 0; i < 6; i++) c += A[Math.floor(Math.random() * A.length)]; if (!(await FBX.val("codes/" + c)) && (!window.WG_OWN || (!(await DBPTR.get(c)) && !(await DBPTR.sharedHas(c))))) return c; } throw new Error("code"); },
   async newShow() { await this.ready; const id = "e" + Date.now().toString(36); const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let key = ""; for (let i = 0; i < 6; i++) key += A[Math.floor(Math.random() * A.length)];
     return { id, code: await this.newCode(), key, owner: this.uid, name: "", theme: "", intro: "", outro: "", order: [], open: false, wpath: "", updatedAt: Date.now() }; },
   async saveShows(shows, show, works, dirtyIds, removedIds, onStep) {
@@ -1380,14 +1539,15 @@ const FBM = {
     // a brand-new show first stores its secret key (nobody can read it back; it only lets other devices claim the show)
     if (show && show.key && !show.keyed && (!show.owner || show.owner === this.uid) && !(await FBX.val("codes/" + show.code))) { try { await FBX.ref("keys/" + show.code).set(show.key); } catch (_) {} show.keyed = true; }
     // the show's header first (it says who owns the code), then its works, then the teacher's own list
-    if (show) { await this.retry(() => FBX.ref("codes/" + show.code).set(hd(show))); let n = 0;
+    if (show) { await this.retry(() => FBX.ref("codes/" + show.code).set(hd(show))); if (window.WG_OWN && !show.ptr) { const g = await DBPTR.get(show.code); if (!g ? await DBPTR.put(show.code) : g.p === DBPTR.mine().p) show.ptr = 1; }
+      if (window.WG_TK && show.key) { try { await FBX.ref("tlist/" + window.WG_TK + "/" + show.code).set(show.key); } catch (e) { console.warn("tlist", e); } } let n = 0;
       for (const id of dirtyIds) { if (onStep) onStep(++n, dirtyIds.length); await this.retry(() => FBX.ref(`works/${show.code}/${id}`).set(works[id])); }
       for (const id of removedIds) { try { await FBX.ref(`works/${show.code}/${id}`).remove(); } catch (_) {} } }
     for (const x of keep) if (!show || x.id !== show.id) { try { await FBX.ref("codes/" + x.code).set(hd(x)); } catch (_) {} }
     await this.retry(() => FBX.ref("teachers/" + this.uid).set({ shows: keep.map(x => Object.assign(this.head(x), { owner: x.owner || this.uid, key: x.key || "" })), updatedAt: Date.now() }));
   },
   async deleteShow(shows, show) {
-    await this.ready; for (const k of ["works", "claps", "clapn", "notes", "wall", "live", "audio"]) { try { await FBX.ref(k + "/" + show.code).remove(); } catch (_) {} }
+    await this.ready; if (window.WG_TK) { try { await FBX.ref("tlist/" + window.WG_TK + "/" + show.code).remove(); } catch (_) {} } for (const k of ["works", "claps", "clapn", "notes", "wall", "live", "audio"]) { try { await FBX.ref(k + "/" + show.code).remove(); } catch (_) {} }
     try { await FBX.ref("codes/" + show.code).remove(); } catch (_) {} try { await FBX.ref("keys/" + show.code).remove(); } catch (_) {} try { await FBX.ref("claims/" + show.code).remove(); } catch (_) {} try { localStorage.removeItem("mc_seen_" + show.code); } catch (_) {}
     await this.saveShows(shows.filter(x => x.id !== show.id), null, {}, [], []);
   },
@@ -1421,17 +1581,17 @@ async function saveImage(dataURL, name) {
 
 /* ================= QR code (byte mode, level M, versions 1-6) ================= */
 const QR = (() => {
-  const ECC = [[26, 1, 10], [44, 1, 16], [70, 1, 26], [100, 2, 18], [134, 2, 24], [172, 4, 16]];
-  const ALIGN = [[], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34]];
+  const ECC = [[26, 1, 10], [44, 1, 16], [70, 1, 26], [100, 2, 18], [134, 2, 24], [172, 4, 16], [196, 4, 18], [242, 4, 22], [292, 5, 22], [346, 5, 26], [404, 5, 30], [466, 8, 22], [532, 9, 22]];
+  const ALIGN = [[], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50], [6, 30, 54], [6, 32, 58], [6, 34, 62]];
   const mul = (x, y) => { let z = 0; for (let i = 7; i >= 0; i--) { z = (z << 1) ^ ((z >>> 7) * 0x11d); z ^= ((y >>> i) & 1) * x; } return z & 255; };
   const divisor = n => { const r = new Array(n).fill(0); r[n - 1] = 1; let root = 1; for (let i = 0; i < n; i++) { for (let j = 0; j < n; j++) { r[j] = mul(r[j], root); if (j + 1 < n) r[j] ^= r[j + 1]; } root = mul(root, 2); } return r; };
   const remainder = (data, dv) => { const r = dv.map(() => 0); for (const b of data) { const f = b ^ r.shift(); r.push(0); dv.forEach((c, i) => (r[i] ^= mul(c, f))); } return r; };
   return text => {
     const bytes = [...new TextEncoder().encode(text)];
-    let v = 0; for (; v < 6; v++) { const [raw, nb, ec] = ECC[v]; if (12 + bytes.length * 8 <= (raw - nb * ec) * 8) break; } if (v >= 6) throw new Error("too long");
+    let v = 0; for (; v < ECC.length; v++) { const [raw, nb, ec] = ECC[v]; if (4 + (v >= 9 ? 16 : 8) + bytes.length * 8 <= (raw - nb * ec) * 8) break; } if (v >= ECC.length) throw new Error("too long");
     const [raw, nb, ec] = ECC[v], cap = raw - nb * ec, size = 21 + 4 * v;
     const bits = [], put = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
-    put(4, 4); put(bytes.length, 8); bytes.forEach(b => put(b, 8)); put(0, Math.min(4, cap * 8 - bits.length)); while (bits.length % 8) bits.push(0);
+    put(4, 4); put(bytes.length, v >= 9 ? 16 : 8); bytes.forEach(b => put(b, 8)); put(0, Math.min(4, cap * 8 - bits.length)); while (bits.length % 8) bits.push(0);
     const data = []; for (let i = 0; i < bits.length; i += 8) { let b = 0; for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j]; data.push(b); }
     for (let p = 0xec; data.length < cap; p ^= 0xec ^ 0x11) data.push(p);
     const nShort = nb - raw % nb, sLen = Math.floor(raw / nb), dv = divisor(ec), blocks = []; let k = 0;
@@ -1443,12 +1603,23 @@ const QR = (() => {
     const finder = (cx, cy) => { for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) { const x = cx + dx, y = cy + dy; if (x < 0 || y < 0 || x >= size || y >= size) continue; const d = Math.max(Math.abs(dx), Math.abs(dy)); set(x, y, d !== 2 && d !== 4); } };
     finder(3, 3); finder(size - 4, 3); finder(3, size - 4);
     const al = ALIGN[v], L = al.length; for (let i = 0; i < L; i++) for (let j = 0; j < L; j++) { if ((i === 0 && j === 0) || (i === 0 && j === L - 1) || (i === L - 1 && j === 0)) continue; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) set(al[i] + dx, al[j] + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1); }
-    const fmt = () => { const d = 0; let r = d; for (let i = 0; i < 10; i++) r = (r << 1) ^ ((r >>> 9) * 0x537); const b = ((d << 10) | r) ^ 0x5412, bit = i => ((b >>> i) & 1) === 1;
+    const fmt = d => { let r = d; for (let i = 0; i < 10; i++) r = (r << 1) ^ ((r >>> 9) * 0x537); const b = ((d << 10) | r) ^ 0x5412, bit = i => ((b >>> i) & 1) === 1;
       for (let i = 0; i <= 5; i++) set(8, i, bit(i)); set(8, 7, bit(6)); set(8, 8, bit(7)); set(7, 8, bit(8)); for (let i = 9; i < 15; i++) set(14 - i, 8, bit(i));
       for (let i = 0; i < 8; i++) set(size - 1 - i, 8, bit(i)); for (let i = 8; i < 15; i++) set(8, size - 15 + i, bit(i)); set(8, size - 8, true); };
-    fmt();
+    fmt(0);
+    if (v >= 6) { let r = v + 1; for (let i = 0; i < 12; i++) r = (r << 1) ^ ((r >>> 11) * 0x1f25); const vb = ((v + 1) << 12) | r; for (let i = 0; i < 18; i++) { const bit = ((vb >>> i) & 1) === 1, a = size - 11 + i % 3, b = Math.floor(i / 3); set(a, b, bit); set(b, a, bit); } }
     let n = 0; for (let right = size - 1; right >= 1; right -= 2) { if (right === 6) right = 5; for (let vert = 0; vert < size; vert++) for (let j = 0; j < 2; j++) { const x = right - j, up = ((right + 1) & 2) === 0, y = up ? size - 1 - vert : vert; if (!F[y][x] && n < cw.length * 8) { Mo[y][x] = ((cw[n >>> 3] >>> (7 - (n & 7))) & 1) === 1; n++; } } }
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (!F[y][x] && (x + y) % 2 === 0) Mo[y][x] = !Mo[y][x];
+    // try the 8 standard masks and keep the one scanners read most easily (lowest penalty)
+    const MASKS = [(x, y) => (x + y) % 2 === 0, (x, y) => y % 2 === 0, (x, y) => x % 3 === 0, (x, y) => (x + y) % 3 === 0, (x, y) => (Math.floor(y / 2) + Math.floor(x / 3)) % 2 === 0, (x, y) => (x * y) % 2 + (x * y) % 3 === 0, (x, y) => ((x * y) % 2 + (x * y) % 3) % 2 === 0, (x, y) => ((x + y) % 2 + (x * y) % 3) % 2 === 0];
+    const penalty = M => { let p = 0, dark = 0; const N = size;
+      for (let k = 0; k < 2; k++) for (let i = 0; i < N; i++) { let run = 1; for (let j = 1; j <= N; j++) { const a = j < N && (k ? M[j][i] : M[i][j]) === (k ? M[j - 1][i] : M[i][j - 1]); if (a) run++; else { if (run >= 5) p += run - 2; run = 1; } }
+        for (let j = 0; j + 10 < N + 4; j++) { const g = t => { const q = j + t - 4; if (q < 0 || q >= N) return false; return k ? M[q][i] : M[i][q]; }; const pat = [1, 0, 1, 1, 1, 0, 1].map(Boolean);
+          if (pat.every((b, t) => g(t) === b) && ([-4, -3, -2, -1].every(t => !g(t)) || [7, 8, 9, 10].every(t => !g(t)))) p += 40; } }
+      for (let y = 0; y < N - 1; y++) for (let x = 0; x < N - 1; x++) { const c = M[y][x]; if (c === M[y][x + 1] && c === M[y + 1][x] && c === M[y + 1][x + 1]) p += 3; }
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (M[y][x]) dark++; p += Math.floor(Math.abs(dark * 20 - N * N * 10) / (N * N)) * 10; return p; };
+    const base = Mo.map(r => r.slice()); let best = null, bestP = Infinity, bestK = 0;
+    for (let k = 0; k < 8; k++) { for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) Mo[y][x] = !F[y][x] && MASKS[k](x, y) ? !base[y][x] : base[y][x]; fmt(k); const pk = penalty(Mo); if (pk < bestP) { bestP = pk; bestK = k; best = Mo.map(r => r.slice()); } }
+    for (let y = 0; y < size; y++) Mo[y] = best[y];
     return Mo;
   };
 })();
@@ -1842,6 +2013,16 @@ function renderNotes() {
   list.slice(0, 40).forEach(n => { const d = document.createElement("div"); d.className = "note"; const b = document.createElement("b"); b.textContent = String(n.nick || "친구").slice(0, 6); const t = document.createElement("span"); t.textContent = String(n.text || "").slice(0, 60); d.append(b, t); el.appendChild(d); });
 }
 $("#vClap").onclick = () => GB.s && clap(GB.s);
+/* notice sheet + own-server chip */
+(function () {
+  const sh = $("#noticeSheet"); const own = window.WG_OWN;
+  $("#goGuide").onclick = () => { sh.hidden = false; };
+  sh.addEventListener("click", e => { if (e.target === sh) sh.hidden = true; });
+  if (own) {
+    $("#ntWhere").textContent = "저장 위치: 선생님의 Google Firebase"; $("#ntDel").hidden = true; $("#ntBusy").hidden = true; $("#ntOwn").hidden = false;
+    document.querySelectorAll(".pn-where").forEach(li => li.textContent = "작품과 글은 선생님의 Google Firebase에 저장돼요."); document.querySelectorAll(".pn-del").forEach(li => li.hidden = true);
+  }
+})();
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => { const sh = b.closest(".sheet"); sh.hidden = true; if (sh.id === "view") GB.s = null; }));
 ["view", "leafSheet", "msgSheet", "wallSheet"].forEach(id => $("#" + id).addEventListener("click", e => { if (e.target.id === id) { e.target.hidden = true; if (id === "view") GB.s = null; } }));
 function markSeen(s) { ST.seen[s.id] = 1; DATA.L("seen_" + ROOM.code, ST.seen); const n = STUDENTS.filter(x => ST.seen[x.id]).length; if (n === STUDENTS.length && STUDENTS.length > 1) toast(`작품 ${n}점을 모두 봤어요! 다음은 포토존이에요`, 4200); }
@@ -2744,8 +2925,8 @@ function lookChips() {
 $("#whoForm").addEventListener("submit", async e => {
   e.preventDefault(); try { ac().resume(); } catch (_) {} const nm = $("#wName").value.trim().slice(0, 8);
   if (nm && badText(nm)) { $("#wMsg").textContent = "다른 이름으로 적어 주세요"; $("#wName").focus(); return; }
-  if (nm && !ST.teacherPreview && /선생|교사|관리자|teacher|admin/i.test(nm)) { $("#wMsg").textContent = "내 이름이나 번호로 적어 주세요"; $("#wName").focus(); return; }
-  if (!nm) { $("#wMsg").textContent = "이름이나 번호를 적어 주세요. 캐릭터 머리 위에 떠요"; $("#wName").focus(); return; }
+  if (nm && !ST.teacherPreview && /선생|교사|관리자|teacher|admin/i.test(nm)) { $("#wMsg").textContent = "내 번호나 별명으로 적어 주세요"; $("#wName").focus(); return; }
+  if (!nm) { $("#wMsg").textContent = "번호나 별명을 적어 주세요. 캐릭터 머리 위에 떠요"; $("#wName").focus(); return; }
   if (!KID_COLORS.some(([c]) => c === ST.look.c)) ST.look.c = 0;
   ST.nick = nm; ST.look = kidLook(nm, ST.look.c, ST.look.t); DATA.L("nick", nm); DATA.L("look", ST.look);
   $("#loading").classList.remove("hide"); await new Promise(r => setTimeout(r, 30));
@@ -2813,8 +2994,16 @@ $("#joinForm").addEventListener("submit", async e => {
   e.preventDefault(); const code = $("#jCode").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""), msg = $("#jMsg"), btn = $("#btnJoin"); msg.textContent = "";
   if (code.length < 6) { msg.textContent = "선생님께 받은 6자리 코드를 넣어 주세요"; return; }
   btn.disabled = true; btn.textContent = "찾는 중…";
-  try { const room = await DATA.findRoom(code); if (room && (room.closed || room.open === false)) { msg.textContent = "이 전시회는 지금 닫혀 있어요. 선생님께 여쭤봐 주세요"; return; } if (!room) { msg.textContent = ONLINE_WANTED() && !DATA.fb ? "인터넷에 연결되지 않아 전시회를 찾지 못했어요. 페이지를 새로고침해 주세요" : "이 코드로 된 전시회를 찾지 못했어요. 코드를 다시 확인해 주세요"; return; } ST.teacherPreview = false; openWho(room); }
-  catch (e2) { console.warn(e2); msg.textContent = "전시회를 찾는 중에 문제가 생겼어요. 잠시 뒤에 다시 해 주세요"; }
+  try {
+    // 1) 안내판(ptr)을 먼저 한 번 조회해요(REST, 실시간 연결 아님). 공용 서버가 100명으로 꽉 차도 전용 서버 전시회로 바로 갈 수 있어요
+    if (window.WG_OWN !== "saved") { const pt = await DBPTR.get(code), here = window.WG_OWN ? DBPTR.mine().p : window.WG_SHARED_PID;
+      if (pt && pt.p !== here) { msg.textContent = "선생님 전용 전시회로 이동해요…"; location.href = location.pathname + "?db=" + window.WG_ENC({ a: pt.a, d: pt.d, p: pt.p }) + "#" + code; return; } }
+    // 2) 지금 서버에서 찾기. 서버가 붐벼 답이 없으면 끝없이 기다리지 않고 안내해요
+    const room = await Promise.race([DATA.findRoom(code), new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error("slow"), { code: "slow" })), 12000))]);
+    if (room && (room.closed || room.open === false)) { msg.textContent = "이 전시회는 지금 닫혀 있어요. 선생님께 여쭤봐 주세요"; return; }
+    if (!room && window.WG_OWN === "link" && await DBPTR.sharedHas(code)) { msg.textContent = "전시회로 이동해요…"; location.href = location.pathname + "#" + code; return; }
+    if (!room) { msg.textContent = ONLINE_WANTED() && !DATA.fb ? "인터넷에 연결되지 않아 전시회를 찾지 못했어요. 페이지를 새로고침해 주세요" : (window.WG_OWN ? "이 코드로 된 전시회를 찾지 못했어요. 코드를 다시 확인해 주세요" : "이 코드로 된 전시회를 찾지 못했어요. 코드를 다시 확인해 주세요"); return; } ST.teacherPreview = false; openWho(room); }
+  catch (e2) { console.warn(e2); msg.textContent = e2 && e2.code === "slow" ? "접속이 몰려 전시회를 찾지 못했어요. 잠시 뒤에 다시 해 주세요" : "전시회를 찾는 중에 문제가 생겼어요. 잠시 뒤에 다시 해 주세요"; }
   finally { btn.disabled = false; btn.textContent = "다음"; }
 });
 
@@ -2864,10 +3053,27 @@ async function openTeacher() {
   show(null); $("#teach").dataset.view = "load"; $("#teach").hidden = false; ST.mode = "teach"; $("#tMsg").textContent = "";
   if (DATA.fb) { await DATA.ready; if (!DATA.uid) { try { await FBX.anon(); } catch (e) { console.warn("anon", e); TE.anonErr = e; } } }
   try { TE.shows = await DATA.loadShows(); } catch (e) { console.warn(e); TE.shows = []; }
+  if (window.WG_TK && DATA.fb && DATA.uid) await tkSync();
   teacherGate(); renderMine(); resetForm(); if (TE.shows.length) setView("list"); else { setView(DATA.fb && DATA.uid ? "list" : "wiz"); if (draftLoad()) setView("wiz"); }
 }
+/* 선생님 전용 링크: 선생님 서버의 tlist/{비밀값} = {코드: 관리키}. 어느 브라우저에서 열어도 이 목록으로 전시회를 불러와요 */
+async function tkSync() {
+  const tk = window.WG_TK; let m = {}, changed = false; TE.tkErr = null;
+  try { m = (await FBX.val("tlist/" + tk)) || {}; } catch (e) { console.warn("tlist", e); TE.tkErr = e; return; }
+  for (const code of Object.keys(m)) { if (TE.shows.some(x => x.code === code)) continue;
+    try { const s = await FBX.claim(code + m[code]); s.id = s.id || "e" + Date.now().toString(36) + code; TE.shows.push(s); changed = true; }
+    catch (e) { if (e && e.code === "missing") { try { await FBX.ref("tlist/" + tk + "/" + code).remove(); } catch (_) {} } } }
+  for (const s of TE.shows) if (s.key && m[s.code] !== s.key) { try { await FBX.ref("tlist/" + tk + "/" + s.code).set(s.key); } catch (_) {} }
+  if (changed) { try { await DATA.saveShows(TE.shows, null, {}, [], []); } catch (e) { console.warn(e); } }
+}
+function tkBox() {
+  const box = $("#tkBox"); if (!box) return; box.hidden = !window.WG_TEACHER_URL || !DATA.fb; if (box.hidden) return;
+  if (TE.tkErr) { box.innerHTML = `<b>선생님 전용 링크를 쓰려면 규칙을 다시 게시해 주세요</b><p>선생님 파이어베이스의 규칙이 예전 것이에요. 안내 페이지 2단계의 규칙을 다시 붙여 넣고 게시해 주세요.</p><a class="btn-sub slim" href="guide.html#rules">안내 페이지 열기</a>`; return; }
+  box.innerHTML = `<b>${ic("lock")} 선생님 전용 링크</b><p>내 전시회는 <b>이 링크로 열 때만</b> 보여요. 즐겨찾기해 두면 어느 컴퓨터·브라우저·시크릿 창에서든 그대로 열고 고칠 수 있어요. <b>아이들에게는 주지 마세요.</b> (아이들에게는 전시회의 코드·링크·QR을 줘요)</p><button class="btn-main slim" type="button" id="tkCopy">선생님 전용 링크 복사</button><input class="tklink" id="tkLink" readonly hidden>`;
+  $("#tkCopy").onclick = async () => { try { await navigator.clipboard.writeText(window.WG_TEACHER_URL); toast("선생님 전용 링크를 복사했어요. 즐겨찾기나 메모에 붙여 넣어 두세요", 3600); } catch (_) { const i = $("#tkLink"); i.hidden = false; i.value = window.WG_TEACHER_URL; i.focus(); i.select(); toast("링크를 길게 눌러 복사해 주세요", 3200); } };
+}
 // on the github copy the teacher signs in with google to make and keep shows; children never need to
-function teacherGate() {
+function teacherGate() { tkBox();
   const n = $("#tLocal"); n.textContent = ""; n.hidden = true; n.classList.remove("plain");
   // online copy that could not reach the database: say so plainly instead of quietly saving only on this device
   if (ONLINE_WANTED() && (!DATA.fb || !DATA.uid)) { const why = !DATA.fb ? "인터넷 저장소에 연결되지 않았어요." : "인터넷 저장소에 들어가지 못했어요. 파이어베이스에서 익명 로그인이 켜져 있는지 확인해 주세요.";
@@ -2943,7 +3149,7 @@ function renderCards() {
     const pv = document.createElement("label"); pv.className = "kpic" + (r.img ? "" : " noimg"); pv.title = "눌러서 사진 바꾸기"; if (r.img) pv.style.backgroundImage = `url(${r.img})`; else { const em = document.createElement("span"); em.textContent = "사진이 없어요 · 눌러서 올리기"; pv.appendChild(em); } const no = document.createElement("i"); no.textContent = i + 1; pv.appendChild(no);
     const fi = document.createElement("input"); fi.type = "file"; fi.accept = "image/*"; fi.hidden = true; fi.id = "k_f_" + r.id; fi.onchange = async () => { const f = fi.files[0]; if (!f) return; try { r.img = await fileToJpeg(f); r.dirty = true; renderCards(); draftSave(); } catch (_) { $("#tMsg").textContent = "그 사진은 열 수 없어요. JPG나 PNG 사진으로 골라 주세요"; } }; pv.appendChild(fi);
     const del = document.createElement("button"); del.type = "button"; del.className = "kdel"; del.textContent = "×"; del.setAttribute("aria-label", `${i + 1}번 작품 빼기`); del.onclick = e => { e.preventDefault(); TE.cards.splice(i, 1); renderCards(); draftSave(); }; pv.appendChild(del);
-    const nm = document.createElement("input"); nm.className = "f"; nm.placeholder = "학생 이름"; nm.maxLength = 8; nm.value = r.name || ""; nm.id = "k_n_" + r.id; nm.setAttribute("aria-label", `${i + 1}번 학생 이름`);
+    const nm = document.createElement("input"); nm.className = "f"; nm.placeholder = "번호 또는 별명"; nm.maxLength = 8; nm.value = r.name || ""; nm.id = "k_n_" + r.id; nm.setAttribute("aria-label", `${i + 1}번 작품 번호 또는 별명`);
     nm.oninput = () => { r.name = nm.value; r.dirty = true; nm.classList.remove("bad"); draftSoon(); };
     nm.onkeydown = e => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); const nx = $("#k_n_" + (TE.cards[i + 1] || {}).id); if (nx) nx.focus(); } };
     const tt = document.createElement("input"); tt.className = "f sm"; tt.placeholder = "작품 제목 (선택)"; tt.maxLength = 16; tt.value = r.title || ""; tt.id = "k_t_" + r.id; tt.setAttribute("aria-label", `${i + 1}번 작품 제목`); tt.oninput = () => { r.title = tt.value; r.dirty = true; draftSoon(); };
@@ -2992,7 +3198,7 @@ $("#tSave").onclick = async () => {
   finally { btn.disabled = false; TE.saving = false; TE.pending = null; }
 };
 function showCode(s) {
-  CODE_ROOM = s; $("#cCode").textContent = s.code; const link = SHARE_URL + "#" + s.code; $("#cLink").textContent = link;
+  CODE_ROOM = s; $("#cCode").textContent = s.code; const link = SHARE_URL + (window.WG_DB ? "?db=" + window.WG_DB : "") + "#" + s.code; $("#cLink").textContent = link;
   const q = $("#qr"); q.innerHTML = ""; const cvs = document.createElement("canvas"); cvs.setAttribute("aria-label", "입장 QR 코드"); try { drawQR(link, cvs); q.appendChild(cvs); } catch (_) { q.textContent = "QR을 만들지 못했어요. 코드를 알려 주세요"; }
   const mk = DATA.fb && s.key ? `${s.code}-${s.key}` : ""; $("#cKeyWrap").hidden = !mk; $("#cKey").textContent = mk;
   $("#cLocal").hidden = true; $("#codeCard").hidden = false;
@@ -3227,7 +3433,7 @@ async function boot() {
   ST.nick = DATA.L("nick") || ""; const lk = DATA.L("look"); if (lk) ST.look = normLook(lk);
   STUDENTS = []; buildExterior(); ST.scene = EXT.scene; ST.mode = "intro";
   $("#loading").classList.add("hide"); requestAnimationFrame(loop); introPlay();
-  hashJoin();
+  hashJoin(); if (window.WG_TKLINK && !location.hash) setTimeout(openTeacher, 300);
 }
 const fontsReady = loadFonts(KO_TEXT);
 fontsReady.catch(() => {}).then(() => boot().catch(e => { console.error(e); $("#loading").innerHTML = "<div>전시관을 여는 중에 문제가 생겼어요. 새로고침해 주세요.</div>"; }));
