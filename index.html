@@ -61,43 +61,6 @@ window.FIREBASE_CONFIG = {
 #netNote .x{position:absolute;top:10px;right:10px;width:36px;height:36px;border:0;background:none;font-size:22px;color:var(--sub);cursor:pointer;border-radius:50%}
 @media (max-width:480px){#netNote .row{flex-direction:column-reverse}#netNote .row a,#netNote .row button{flex:none;width:100%}}
 </style>
-<div id="netNote" role="alert" aria-live="assertive"><button class="x" type="button" aria-label="닫기">×</button><b id="nnT"></b><p id="nnP"></p><div class="row" id="nnRow"></div></div>
-<script>
-const NETWATCH = (() => {
-  const GUIDE = new URL("guide.html", location.href.split(/[?#]/)[0]).href;
-  const el = document.getElementById("netNote"), T = document.getElementById("nnT"), P = document.getElementById("nnP"), row = document.getElementById("nnRow");
-  let started = false, up = false, timer = 0, closed = false;
-  const shared = () => { const c = window.FIREBASE_CONFIG || {}; return !window.WG_OWN && c.projectId === "woorigallery-4a06a"; };
-  function show(title, body, buttons) {
-    if (closed) return;
-    T.textContent = title; P.textContent = body; row.innerHTML = "";
-    buttons.forEach(([label, cls, act]) => { const b = document.createElement(typeof act === "string" ? "a" : "button"); b.className = cls; b.textContent = label; if (typeof act === "string") { b.href = act; } else { b.type = "button"; b.onclick = act; } row.append(b); });
-    el.classList.add("on");
-  }
-  function hide() { el.classList.remove("on"); }
-  el.querySelector(".x").onclick = () => { closed = true; hide(); };
-  function slow() {
-    if (up || !navigator.onLine) return;
-    const btns = [["새로고침", "re", () => location.reload()]];
-    if (shared()) btns.push(["우리 반 전용으로 만들기", "go", GUIDE]);
-    if (window.WG_OWN === "saved") btns.push(["연결 다시 확인하기", "go", GUIDE + "#connect"]);
-    show(window.WG_OWN ? "선생님 전용 서버에 연결되지 않아요" : "접속이 몰려 연결이 늦어지고 있어요",
-      shared() ? "잠시 뒤 새로고침해 주세요. 계속 막히면 우리 반 전용 전시회를 직접 만들어 쓸 수 있어요."
-      : window.WG_OWN ? "잠시 뒤 새로고침해 주세요. 계속 안 되면 선생님 파이어베이스 설정을 다시 확인해 주세요." : "잠시 뒤 새로고침해 주세요. 인터넷 연결도 함께 확인해 주세요.", btns);
-  }
-  function start(db) {
-    if (started) return; started = true;
-    db.ref(".info/connected").on("value", s => { up = !!s.val(); if (up) { clearTimeout(timer); hide(); } else { clearTimeout(timer); timer = setTimeout(slow, 9000); } });
-  }
-  // a copy whose settings were not filled in yet (or are missing the database address)
-  addEventListener("DOMContentLoaded", () => {
-    const c = window.FIREBASE_CONFIG || {};
-    if (!c.apiKey || /여기|YOUR/.test(c.apiKey)) show("파이어베이스 설정이 아직 비어 있어요", "지금은 이 기기에서만 저장되고, 아이들은 코드로 들어올 수 없어요. 안내의 '설정값 붙여 넣기' 단계를 확인해 주세요.", [["설치 안내 보기", "go", GUIDE]]);
-    else if (!/^https:\/\//.test(c.databaseURL || "")) show("설정값에 databaseURL이 빠져 있어요", "파이어베이스에서 Realtime Database를 만든 뒤 설정값을 다시 복사해 붙여 넣어 주세요.", [["설치 안내 보기", "go", GUIDE]]);
-  });
-  return { start };
-})();
-</script>
 
 <title>우리반 전시회</title>
 <meta name="description" content="우리 반 그림이 걸린 3D 미술관. 코드 하나로 친구들과 함께 둘러봐요.">
@@ -243,6 +206,13 @@ input.f::placeholder,textarea.f::placeholder{color:#a9a0ae}
 #zoneTag.on{opacity:1}
 #zoneTag small{display:block;font-size:15px;letter-spacing:.2em;color:var(--accent)}
 #zoneTag b{display:block;font-weight:400;font-size:clamp(30px,5vw,46px);text-shadow:0 2px 0 #fff,0 6px 20px rgba(255,255,255,.8)}
+/* busy notice (shared server nearly at its free limit) */
+#busySheet h3{word-break:keep-all}
+#busySheet .body p{margin:0 0 10px;word-break:keep-all;overflow-wrap:anywhere}
+#busySheet .bs-skip{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:14px;color:var(--sub);cursor:pointer}
+#busySheet .bs-foot{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+#busySheet .bs-foot a{text-decoration:none;display:inline-flex;align-items:center}
+@media (max-width:480px){#busySheet .bs-foot>*{flex:1 1 100%;justify-content:center}}
 /* notice: "꼭 읽어 주세요" */
 .readme{display:inline-flex;align-items:center;gap:8px;margin:14px auto 0;padding:7px 14px 7px 7px;border-radius:999px;background:rgba(47,42,61,.55);color:#fff;font:inherit;font-size:14px;border:1px solid rgba(255,255,255,.35);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);cursor:pointer;animation:hFade .8s ease 2.1s both}
 .readme .rm-tag{background:#f4d29a;color:#2f2a3d;border-radius:999px;padding:3px 10px;font-weight:700;font-size:12.5px}
@@ -774,6 +744,43 @@ html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:252px}
 </style>
 </head>
 <body>
+<div id="netNote" role="alert" aria-live="assertive"><button class="x" type="button" aria-label="닫기">×</button><b id="nnT"></b><p id="nnP"></p><div class="row" id="nnRow"></div></div>
+<script>
+const NETWATCH = (() => {
+  const GUIDE = new URL("guide.html", location.href.split(/[?#]/)[0]).href;
+  const el = document.getElementById("netNote"), T = document.getElementById("nnT"), P = document.getElementById("nnP"), row = document.getElementById("nnRow");
+  let started = false, up = false, timer = 0, closed = false;
+  const shared = () => { const c = window.FIREBASE_CONFIG || {}; return !window.WG_OWN && c.projectId === "woorigallery-4a06a"; };
+  function show(title, body, buttons) {
+    if (closed) return;
+    T.textContent = title; P.textContent = body; row.innerHTML = "";
+    buttons.forEach(([label, cls, act]) => { const b = document.createElement(typeof act === "string" ? "a" : "button"); b.className = cls; b.textContent = label; if (typeof act === "string") { b.href = act; } else { b.type = "button"; b.onclick = act; } row.append(b); });
+    el.classList.add("on");
+  }
+  function hide() { el.classList.remove("on"); }
+  el.querySelector(".x").onclick = () => { closed = true; hide(); };
+  function slow() {
+    if (up || !navigator.onLine) return;
+    const btns = [["새로고침", "re", () => location.reload()]];
+    if (shared()) btns.push(["우리 반 전용으로 만들기", "go", GUIDE]);
+    if (window.WG_OWN === "saved") btns.push(["연결 다시 확인하기", "go", GUIDE + "#connect"]);
+    show(window.WG_OWN ? "선생님 전용 서버에 연결되지 않아요" : "접속이 몰려 연결이 늦어지고 있어요",
+      shared() ? "잠시 뒤 새로고침해 주세요. 계속 막히면 우리 반 전용 전시회를 직접 만들어 쓸 수 있어요."
+      : window.WG_OWN ? "잠시 뒤 새로고침해 주세요. 계속 안 되면 선생님 파이어베이스 설정을 다시 확인해 주세요." : "잠시 뒤 새로고침해 주세요. 인터넷 연결도 함께 확인해 주세요.", btns);
+  }
+  function start(db) {
+    if (started) return; started = true;
+    db.ref(".info/connected").on("value", s => { up = !!s.val(); if (up) { clearTimeout(timer); hide(); } else { clearTimeout(timer); timer = setTimeout(slow, 9000); } });
+  }
+  // a copy whose settings were not filled in yet (or are missing the database address)
+  addEventListener("DOMContentLoaded", () => {
+    const c = window.FIREBASE_CONFIG || {};
+    if (!c.apiKey || /여기|YOUR/.test(c.apiKey)) show("파이어베이스 설정이 아직 비어 있어요", "지금은 이 기기에서만 저장되고, 아이들은 코드로 들어올 수 없어요. 안내의 '설정값 붙여 넣기' 단계를 확인해 주세요.", [["설치 안내 보기", "go", GUIDE]]);
+    else if (!/^https:\/\//.test(c.databaseURL || "")) show("설정값에 databaseURL이 빠져 있어요", "파이어베이스에서 Realtime Database를 만든 뒤 설정값을 다시 복사해 붙여 넣어 주세요.", [["설치 안내 보기", "go", GUIDE]]);
+  });
+  return { start };
+})();
+</script>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
 <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h14v15H6a2 2 0 0 0-2 2 2 2 0 0 0 2 2h14"/><path d="M8 7h8"/></symbol>
 <symbol id="i-exit" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/></symbol>
@@ -899,6 +906,22 @@ html:not(.touch) #emoBar,html:not(.touch) #camBtns{width:252px}
   </div>
 </div>
 
+<div id="busySheet" class="sheet" hidden>
+  <div class="card notice" role="dialog" aria-labelledby="bsT"><header><h3 id="bsT">꼭 읽어 주세요!</h3><button class="x" data-close type="button" aria-label="닫기">×</button></header>
+    <div class="body">
+      <div id="bsHome">
+        <p>우리반 전시회 사용량이 한도에 가까워져 곧 열리지 않을 수 있어요.</p>
+        <p>수업에 쓰실 전시회는 가급적 선생님 구글 계정으로 만드는 <b>'우리 반 전용 서버'</b>에서 만들어 주세요.</p>
+        <label class="bs-skip"><input type="checkbox" id="bsSkip"> 오늘 하루 보지 않기</label>
+      </div>
+      <div id="bsTeach" hidden>
+        <p>사용량이 한도에 가까워져, 여기서 만든 전시회가 곧 열리지 않을 수 있어요.</p>
+        <p>수업에 쓰실 전시회는 가급적 선생님 구글 계정으로 만드는 <b>'우리 반 전용 서버'</b>에서 만들어 주세요.</p>
+      </div>
+    </div>
+    <footer class="bs-foot"><a class="btn-main" href="guide.html" target="_blank" rel="noopener">우리 반 전용으로 만들기 →</a><button class="btn-sub" type="button" id="bsOk">확인</button></footer>
+  </div>
+</div>
 <div id="noticeSheet" class="sheet" hidden>
   <div class="card notice" role="dialog" aria-labelledby="ntT"><header><h3 id="ntT">이용 안내</h3><button class="x" data-close type="button" aria-label="닫기">×</button></header>
     <div class="body">
@@ -1052,7 +1075,10 @@ function shade(hex, amt) { const c = new THREE.Color(hex); c.lerp(new THREE.Colo
 
 /* ================= renderer + soft bloom ================= */
 const canvas = $("#c");
-const R = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+const R = (() => { try { return new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" }); } catch (e) {
+  // no WebGL (old device, switched off, school filter): say so instead of an endless "opening" screen
+  const l = document.getElementById("loading"); if (l) l.innerHTML = "<div style=\"max-width:420px;padding:0 24px;text-align:center;line-height:1.6\">이 기기나 브라우저에서는 3D 전시관을 열 수 없어요.<br><small style=\"font-size:15px;color:#736b80\">크롬·엣지·사파리 최신 버전으로 열거나, 브라우저 설정에서 하드웨어 가속(그래픽 가속)을 켜 주세요.</small></div>";
+  throw e; } })();
 // phones and tablets: a little lower resolution and smaller shadows from the start, so the first minute is smooth too
 const COARSE = (() => { try { return matchMedia("(pointer:coarse)").matches || navigator.maxTouchPoints > 0; } catch (_) { return false; } })();
 const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -2013,6 +2039,18 @@ function renderNotes() {
   list.slice(0, 40).forEach(n => { const d = document.createElement("div"); d.className = "note"; const b = document.createElement("b"); b.textContent = String(n.nick || "친구").slice(0, 6); const t = document.createElement("span"); t.textContent = String(n.text || "").slice(0, 60); d.append(b, t); el.appendChild(d); });
 }
 $("#vClap").onclick = () => GB.s && clap(GB.s);
+/* busy notice: home popup + on the teacher screen (shared server only) */
+(function () {
+  const sh = $("#busySheet"), KEY = "wg_busy_hide", today = new Date().toISOString().slice(0, 10);
+  const open = mode => { $("#bsHome").hidden = mode !== "home"; $("#bsTeach").hidden = mode !== "teach"; sh.hidden = false; };
+  $("#bsOk").onclick = () => { sh.hidden = true; if ($("#bsSkip").checked) { try { localStorage.setItem(KEY, today); } catch (_) {} } };
+  sh.addEventListener("click", e => { if (e.target === sh) sh.hidden = true; });
+  if (window.WG_OWN) return;
+  let hidden = false; try { hidden = localStorage.getItem(KEY) === today; } catch (_) {}
+  if (!hidden && !/^#[A-Z0-9]{6}$/i.test(location.hash)) open("home");
+  let shown = false; // once per visit, right after the teacher screen opens
+  document.addEventListener("click", e => { if (shown || !e.target.closest || !e.target.closest("#goTeach")) return; shown = true; setTimeout(() => { const t = $("#teach"); if (t && !t.hidden) open("teach"); else shown = false; }, 400); });
+})();
 /* notice sheet + own-server chip */
 (function () {
   const sh = $("#noticeSheet"); const own = window.WG_OWN;
@@ -2881,7 +2919,7 @@ function fxBurst() {
 function applyClaps(rows) { let cnt = {}; if (rows && rows.__counts) cnt = rows.__counts; else (rows || []).forEach(r => (cnt[r.sid] = (cnt[r.sid] || 0) + 1)); STUDENTS.forEach(s => { const n = cnt[s.id] || 0; if (n !== s.claps) { const up = n > s.claps && !FIRST; s.claps = n; if (s.art) { labelDraw(s); clapDots(s); if (up) sparkle(s); } } }); FIRST = false; ST.actKey = ""; if (GB.s) $("#vClapN").textContent = GB.s.claps; }
 async function clap(s) {
   fxBurst(); const now = performance.now(); if (CLAP_T[s.id] && now - CLAP_T[s.id] < 700) return; CLAP_T[s.id] = now;
-  tone(880, .12, .05, "triangle"); tone(1320, .18, .04, "sine", .05); sparkle(s); if (player) player.userData.clapTo = now + 1200; ST.my.claps++; s.claps++; if (GB.s === s) $("#vClapN").textContent = s.claps;
+  tone(880, .12, .05, "triangle"); tone(1320, .18, .04, "sine", .05); sparkle(s); if (player) player.userData.clapTo = now + 1200; ST.my.claps++; s.claps++; if (s.art) clapDots(s); _cap = null; if (GB.s === s) $("#vClapN").textContent = s.claps;
   try { const all = await DATA.add("claps", ROOM.code, { sid: s.id }); if (all) applyClaps(sampleMerge("claps", all)); } catch (_) { toast("박수를 보내지 못했어요. 잠시 뒤에 다시 해 주세요"); }
 }
 $("#gbForm").addEventListener("submit", async e => { e.preventDefault(); const text = $("#gbText").value.trim().slice(0, 60); if (!text) { $("#gbMsg").textContent = "칭찬 한마디를 적어 주세요"; return; } if (badText(text)) { $("#gbMsg").textContent = "친구가 기분 좋아지는 말로 바꿔 볼까요?"; return; } const wait = postCheck(); if (wait) { $("#gbMsg").textContent = wait; return; } $("#gbMsg").textContent = ""; try { const all = await DATA.add("notes", ROOM.code, { sid: GB.s.id, nick: ST.nick || "친구", text }); if (all) applyNotes(sampleMerge("notes", all)); $("#gbText").value = ""; ST.my.notes++; postDone(); tone(990, .2, .05); fxBurst(); } catch (_) { $("#gbMsg").textContent = "남기지 못했어요. 잠시 뒤에 다시 해 주세요"; } });
@@ -3117,7 +3155,7 @@ function renderMine() {
     mk(ic(s.open ? "lock" : "unlock") + (s.open ? " 전시 닫기" : " 전시 열기"), "", async () => { s.open = !s.open; try { await DATA.saveShows(TE.shows, null, {}, [], []); toast(s.open ? "전시회를 열었어요. 아이들이 코드로 들어올 수 있어요" : "전시회를 닫았어요. 코드로 들어올 수 없어요", 3200); } catch (e) { s.open = !s.open; toast("바꾸지 못했어요. 잠시 뒤에 다시 해 주세요"); } renderMine(); }, menu);
     mk(ic("message") + " 글 관리", "", () => openModerate(s), menu);
     if (DATA.fb && s.key) mk(ic("lock") + " 관리 코드 보기", "", () => showCode(s), menu);
-    mk(ic("trash") + " 지우기", "danger", () => confirmBox(`‘${showTitle(s)}’를 지울까요? 작품과 아이들이 남긴 글이 모두 사라져요.`, "지우기", async () => { await DATA.deleteShow(TE.shows, s); TE.shows = TE.shows.filter(x => x !== s); if (TE.show === s) resetForm(); renderMine(); toast("전시회를 지웠어요"); }), menu);
+    mk(ic("trash") + " 지우기", "danger", () => confirmBox(`‘${showTitle(s)}’를 지울까요? 작품과 아이들이 남긴 글이 모두 사라져요.`, "지우기", async () => { try { await DATA.deleteShow(TE.shows, s); } catch (e) { console.warn("delete", e); toast("전시회를 지우지 못했어요. 인터넷 연결을 확인하고 다시 해 주세요", 3600); return; } TE.shows = TE.shows.filter(x => x !== s); if (TE.show === s) resetForm(); renderMine(); toast("전시회를 지웠어요"); }), menu);
     c.append(top, meta, btns); el.appendChild(c);
   });
 }
